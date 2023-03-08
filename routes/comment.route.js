@@ -1,99 +1,113 @@
 const express = require('express');
 
 const router = express.Router({mergeParams: true}); //index.js의 _postId를 params로 갖고오기 위해
-
+const loginMiddleware = require("../middlewares/login-middleware");
 const Comments = require("../schemas/comments")
+const Posts = require("../schemas/posts")
 
 // 댓글 생성
-router.post("/", async (req, res) => {
+router.post("/", loginMiddleware, async (req, res) => {
     try {
-        const {_postId} = req.params;
-        const { user,password,content } = req.body;
-        if (!content){
-            return res.status(404).json({message: "댓글 내용을 입력해주세요."})
+        const { postId } = req.params;
+        const { userId, nickname } = res.locals.user;
+        const { comment } = req.body;
+        const post = await Posts.findById(postId)
+        if (!post) {
+            return res.status(404).json({ errorMessage: "게시글이 존재하지 않습니다." })
         }
-        await Comments.create({user, password, content, _postId})
-        res.json({ message: "댓글을 생성하였습니다." })
+        if (!comment){
+            return res.status(404).json({errorMessage: "댓글 내용을 입력해주세요."})
+        }
+        await Comments.create({postId, userId, nickname, comment})
+        res.status(201).json({ message: "댓글을 작성하였습니다." })
     } catch (error) {
         console.log(error.message)
-        res.status(400).json({ message: "데이터 형식이 올바르지 않습니다." })
+        res.status(400).json({ errorMessage: "댓글 작성에 실패하였습니다." })
     }
 })
 
 //댓글 목록 조회
 router.get("/", async (req, res) => {
     try {
-        const {_postId} = req.params;
-        const comment = await Comments.find({_postId:_postId}).sort({createdAt: -1}) ;
+        const { postId } = req.params;
+        const post = await Posts.findById(postId)
+        if (!post) {
+            return res.status(404).json({ errorMessage: "게시글이 존재하지 않습니다." })
+        }
+
+        const comment = await Comments.find({postId}).sort({createdAt: -1}) ;
         const results = comment.map((comment)=>{
         return {
-            commentId: comment._id,
-            user: comment.user,
-            content: comment.content,
-            createdAt: comment.createdAt
+            commentId:comment.commentId,
+            userId: comment.userId,
+            nickname: comment.nickname,
+            comment: comment.comment,
+            createdAt: comment.createdAt,
+            updatedAt: comment.updatedAt
         }
         })
-        res.json({data: results});
+        res.json({comments: results});
     } catch (error) {
         console.log(error.message)
-        res.status(400).json({ message: "데이터 형식이 올바르지 않습니다." })
+        res.status(400).json({ errorMessage: "댓글 조회에 실패하였습니다." })
     }
 })
 
 
 
 //댓글 수정
-router.put("/:_commentId", async (req, res) => {
+router.put("/:commentId", loginMiddleware, async (req, res) => {
     try {
-        const {password, content} = req.body;
-        if (!password){
-            return res.status(400).json({message: "데이터 형식이 올바르지 않습니다."})
+        const { comment } = req.body;
+        const { userId } = res.locals.user;
+        const { postId, commentId } = req.params;
+        const post = await Posts.findById(postId)
+        if (!post) {
+            return res.status(404).json({ errorMessage: "게시글이 존재하지 않습니다." })
         }
-        if (!content){
-            return res.status(400).json({message: "댓글 내용을 입력해주세요."})
+        const existComment = await Comments.findById(commentId)
+        if (!existComment){
+            return res.status(404).json({errorMessage: "댓글이 존재하지 않습니다."})
         }
-        const {_commentId} = req.params;
-        const comment = await Comments.findById(_commentId)
-
+        if (existComment.userId!==userId){
+            return res.status(403).json({errorMessage: "게시글의 수정 권한이 존재하지 않습니다."})
+        }
         if (!comment){
-            return res.status(404).json({message: "댓글 조회에 실패했습니다."})
+            return res.status(400).json({errorMessage: "댓글 내용을 입력해주세요."})
         }
 
-        if (comment.password === password) {
-            await Comments.findByIdAndUpdate(_commentId, {
-                        content: content
-                        });
-        } else {
-            return res.status(401).json({message:"비밀번호가 일치하지 않습니다."})
-        }
+        await Comments.findByIdAndUpdate(commentId, { comment: comment });
         res.status(200).json({message: "댓글을 수정하였습니다."});
+
     } catch (error) {
-        res.status(400).json({message:error.message})
+        console.log(error.message)
+        res.status(400).json({errorMessage: "댓글 수정에 실패하였습니다."})
     }
 })
 
 
 //댓글 삭제
-router.delete("/:_commentId", async(req,res)=>{
+router.delete("/:commentId", loginMiddleware, async(req,res)=>{
     try {
-        const {_commentId} = req.params;
-        const comment = await Comments.findById(_commentId);
-        if (!comment){
-            return res.status(404).json({message: "댓글 조회에 실패했습니다."})
+        const { userId } = res.locals.user;
+        const { postId, commentId } = req.params;
+        const post = await Posts.findById(postId)
+        if (!post) {
+            return res.status(404).json({ errorMessage: "게시글이 존재하지 않습니다." })
         }
-        const {password} = req.body;
-        if (!password){
-            return res.status(404).json({message: "데이터 형식이 올바르지 않습니다."})
+        const existComment = await Comments.findById(commentId)
+        if (!existComment){
+            return res.status(404).json({errorMessage: "댓글이 존재하지 않습니다."})
         }
-        if (comment.password === password) {
-            await Comments.findOneAndDelete({_id:_commentId})
-        } else {
-            return res.status(401).json({message:"비밀번호가 일치하지 않습니다."})
+        if (existComment.userId!==userId){
+            return res.status(403).json({errorMessage: "게시글의 삭제 권한이 존재하지 않습니다."})
         }
-        return res.status(200).json({message: "게시글을 삭제하였습니다."});
+        await Comments.findOneAndDelete({ _id : commentId })
+        return res.status(200).json({message: "댓글을 삭제하였습니다."});
 
     } catch (error) {
-        res.status(400).json({message:error.message})
+        console.log(error.message)
+        res.status(400).json({errorMessage: "댓글 삭제에 실패하였습니다."})
     }
   })
 

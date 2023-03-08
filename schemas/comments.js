@@ -1,19 +1,19 @@
 const mongoose = require("mongoose");
 
 const commentsSchema = new mongoose.Schema({
-        user: {
+        userId: {
             type: String,
             required: true,
         },
-        password: {
-            type: Number,
-            required: true,
-          },
-        content: {
+        nickname: {
             type: String,
             required: true,
         },
-        _postId: {
+        comment: {
+            type: String,
+            required: true,
+        },
+        postId: {
             type: String,
             required: true
         }
@@ -22,5 +22,14 @@ const commentsSchema = new mongoose.Schema({
     timestamps: true
     }
 );
+
+commentsSchema.virtual("commentId").get(function () {
+    return this._id.toHexString();
+  });
+  
+  // user 정보를 JSON으로 형변환 할 때 virtual 값이 출력되도록 설정
+  commentsSchema.set("toJSON", {
+    virtuals: true,
+  });
 
 module.exports = mongoose.model("Comments", commentsSchema);
